@@ -1,0 +1,106 @@
+---
+- name: Installer Asterisk sur la machine cible
+  hosts: asterisk_servers
+  become: yes
+  become_user: root
+  become_method: sudo
+  vars:
+    asterisk_version: "22.2.0"  # Version spécifique d'Asterisk à installer
+    asterisk_url: "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-{{ asterisk_version }}.tar.gz"
+    asterisk_install_dir: "/usr/src/asterisk"
+
+  tasks:
+    - name: Mettre à jour les paquets système
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Installer les dépendances nécessaires
+      apt:
+        name:
+          - build-essential
+          - libxml2-dev
+          - libncurses5-dev
+          - libssl-dev
+          - libsqlite3-dev
+          - uuid-dev
+          - libjansson-dev
+        state: present
+
+    - name: Créer le répertoire pour Asterisk
+      file:
+        path: "{{ asterisk_install_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Télécharger la version spécifique d'Asterisk
+      get_url:
+        url: "{{ asterisk_url }}"
+        dest: "/tmp/asterisk-{{ asterisk_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Vérifier si le fichier tar.gz existe
+      stat:
+        path: "/tmp/asterisk-{{ asterisk_version }}.tar.gz"
+      register: asterisk_tar
+
+    - name: Extraire le fichier tar.gz
+      unarchive:
+        src: "/tmp/asterisk-{{ asterisk_version }}.tar.gz"
+        dest: "{{ asterisk_install_dir }}"
+        remote_src: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Afficher un message d'erreur si le fichier n'existe pas
+      debug:
+        msg: "Le fichier asterisk-{{ asterisk_version }}.tar.gz n'a pas été trouvé dans /tmp."
+      when: not asterisk_tar.stat.exists
+
+    - name: Se déplacer dans le répertoire d'asterisk
+      command:
+        cmd: ./configure
+        chdir: "{{ asterisk_install_dir }}/asterisk-{{ asterisk_version }}"
+      become: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Lancer make menuselect pour la configuration
+      command:
+        cmd: make menuselect
+        chdir: "{{ asterisk_install_dir }}/asterisk-{{ asterisk_version }}"
+      become: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Compiler Asterisk
+      command:
+        cmd: make
+        chdir: "{{ asterisk_install_dir }}/asterisk-{{ asterisk_version }}"
+      become: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Installer Asterisk
+      command:
+        cmd: make install
+        chdir: "{{ asterisk_install_dir }}/asterisk-{{ asterisk_version }}"
+      become: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Installer les fichiers de configuration d'Asterisk
+      command:
+        cmd: make samples
+        chdir: "{{ asterisk_install_dir }}/asterisk-{{ asterisk_version }}"
+      become: yes
+      when: asterisk_tar.stat.exists
+
+    - name: Nettoyer les fichiers temporaires
+      file:
+        path: "/tmp/asterisk-{{ asterisk_version }}.tar.gz"
+        state: absent
+      become: yes
+
+    - name: Démarrer et activer Asterisk en tant que service
+      service:
+        name: asterisk
+        state: started
+        enabled: yes
+      become: yes
+      when: asterisk_tar.stat.exists
